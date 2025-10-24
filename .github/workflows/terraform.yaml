@@ -223,7 +223,7 @@ jobs:
       - name: "Terraform Apply: Environment: ${{ matrix.env }}"
         id: apply
         run: |
-          terraform apply -input=false -auto-approve tfplan
+          terraform apply -var="${{ secrets.RUNNER_TOKEN }}" -auto-approve tfplan
         env:
           ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
