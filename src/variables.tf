@@ -60,7 +60,6 @@ variable "image_urn" {
 variable "runner_token" {
   type        = string
   description = "(Required) The Github actions self-hosted runner registration token"
-  default     = ""
 }
 
 variable "runner_version" {
