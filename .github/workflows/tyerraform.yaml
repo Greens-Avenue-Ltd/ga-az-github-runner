@@ -1,0 +1,230 @@
+# Name of the workflow
+name: Terraform CI/CD Pipeline
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  terraform-plan:
+    runs-on: ubuntu-latest
+    environment: ${{ matrix.env }}
+    strategy:
+      max-parallel: 1
+      matrix:
+        env: [non-prod]
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      issues: write
+    defaults:
+      run:
+        working-directory: src
+    steps:
+      - name: Checkpout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Read Terraform Version from Files
+        id: tfver
+        run: echo "version=$(cat .terraform-version)" >> $GITHUB_OUTPUT
+
+      - name: Setup Terraform using tfenv
+        uses: tofuutils/tenv-github-action@main
+        with:
+          tool_name: terraform
+          tool_version: ${{ steps.tfver.outputs.version }}
+
+      - name: Add Terraform to PATH
+        run: |
+          TERRAFORM_PATH=$(find "${GITHUB_WORKSPACE}/.tenv/Terraform" -name "terraform" -type f | head -1)
+          if [ -z "$TERRAFORM_PATH" ]; then
+            echo "Terraform binary not found!"
+            exit 1
+          fi
+          TERRAFORM_DIR=$(dirname "$TERRAFORM_PATH")
+          echo "$TERRAFORM_DIR" >> "$GITHUB_PATH"
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.ARM_CLIENT_ID }}
+          tenant-id: ${{ secrets.ARM_TENANT_ID }}
+          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+
+      - name: Replace GIT config global URL
+        run: |
+          git config --local --remove-section http."https://github.com/"
+          git config --global url."https://${{secrets.GH_TOKEN}}@github.com/".insteadOf "https://github.com/"
+
+      #- name: Configure GIT Credentials
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          ARM_USE_OIDC: true
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate
+
+      - name: "Terraform workspace: Environment: ${{ matrix.env }}"
+        id: workspace
+        run: |
+          echo "*** Creating/Selecting terraform workspace: ${{ matrix.env }} ***"
+          terraform workspace select ${{ matrix.env }} || terraform workspace new ${{ matrix.env }}
+        shell: bash
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          ARM_USE_OIDC: true
+
+      - name: "Terraform Plan: Environment: ${{ matrix.env }}"
+        id: plan
+        run: |
+          terraform plan -input=false -out=tfplan -var-file=vars/${{ matrix.env }}.tfvars
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          ARM_USE_OIDC: true
+
+      - name: Remove Files
+        working-directory: src
+        shell: bash
+        run: |
+          rm -r .terraform
+          rm .terraform.lock.hcl
+
+      - name: Upload Plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.env }}_tf_core
+          path: src
+
+      - name: Debug
+        id: debug
+        run: |
+          echo ${{ github.event_name }}
+        shell: bash
+
+  terraform-apply:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: [terraform-plan]
+    environment: ${{ matrix.env }}
+    strategy:
+      max-parallel: 1
+      matrix:
+        env: [non-prod]
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      issues: write
+    defaults:
+      run:
+        working-directory: src
+    steps:
+      - name: Checkpout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Read Terraform Version from Files
+        id: tfver
+        run: echo "version=$(cat .terraform-version)" >> $GITHUB_OUTPUT
+
+      - name: Setup Terraform using tfenv
+        uses: tofuutils/tenv-github-action@main
+        with:
+          tool_name: terraform
+          tool_version: ${{ steps.tfver.outputs.version }}
+
+      - name: Add Terraform to PATH
+        run: |
+          TERRAFORM_PATH=$(find "${GITHUB_WORKSPACE}/.tenv/Terraform" -name "terraform" -type f | head -1)
+          if [ -z "$TERRAFORM_PATH" ]; then
+            echo "Terraform binary not found!"
+            exit 1
+          fi
+          TERRAFORM_DIR=$(dirname "$TERRAFORM_PATH")
+          echo "$TERRAFORM_DIR" >> "$GITHUB_PATH"
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.ARM_CLIENT_ID }}
+          tenant-id: ${{ secrets.ARM_TENANT_ID }}
+          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+
+      - name: Replace GIT config global URL
+        run: |
+          git config --local --remove-section http."https://github.com/"
+          git config --global url."https://${{secrets.GH_TOKEN}}@github.com/".insteadOf "https://github.com/"
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          ARM_USE_OIDC: true
+
+      - name: "Terraform workspace: Environment: ${{ matrix.env }}"
+        id: workspace
+        run: |
+          echo "*** Creating/Selecting terraform workspace: ${{ matrix.env }} ***"
+          terraform workspace select ${{ matrix.env }} || terraform workspace new ${{ matrix.env }}
+        shell: bash
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          ARM_USE_OIDC: true
+
+      - name: Download Plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.env }}_tf_core
+          path: src
+
+      - name: "Reduced Plan: Environment: ${{ matrix.env }}"
+        id: plan
+        run: terraform show tfplan
+
+      #- name: tibdex/github-app-token@v2
+      #  uses: tibdex/github-app-token@v2
+
+      #- name: Change Environment to Uppercase
+      #  id: uppercase
+      #  run: |
+      #    INPUT=${{  matrix.env }}
+      #    exho "upperCaseValue=${INPUT^^}" >> $GITHUB_OUTPUT
+
+      #- name: Wait for approval
+
+      - name: "Terraform Apply: Environment: ${{ matrix.env }}"
+        id: apply
+        run: |
+          terraform apply -input=false -auto-approve tfplan
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
