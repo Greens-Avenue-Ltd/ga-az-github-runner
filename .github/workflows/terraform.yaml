@@ -156,15 +156,15 @@ jobs:
           tool_name: terraform
           tool_version: ${{ steps.tfver.outputs.version }}
 
-      - name: Add Terraform to PATH
-        run: |
-          TERRAFORM_PATH=$(find "${GITHUB_WORKSPACE}/.tenv/Terraform" -name "terraform" -type f | head -1)
-          if [ -z "$TERRAFORM_PATH" ]; then
-            echo "Terraform binary not found!"
-            exit 1
-          fi
-          TERRAFORM_DIR=$(dirname "$TERRAFORM_PATH")
-          echo "$TERRAFORM_DIR" >> "$GITHUB_PATH"
+      #- name: Add Terraform to PATH
+      #  run: |
+      #    TERRAFORM_PATH=$(find "${GITHUB_WORKSPACE}/.tenv/Terraform" -name "terraform" -type f | head -1)
+      #    if [ -z "$TERRAFORM_PATH" ]; then
+      #      echo "Terraform binary not found!"
+      #      exit 1
+      #    fi
+      #    TERRAFORM_DIR=$(dirname "$TERRAFORM_PATH")
+      #    echo "$TERRAFORM_DIR" >> "$GITHUB_PATH"
 
       - name: Azure Login
         uses: azure/login@v2
