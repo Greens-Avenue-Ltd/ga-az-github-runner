@@ -54,7 +54,7 @@ variable "runner_size" {
 variable "image_urn" {
   type        = string
   description = "(Optional) The image URN to use for the runner VM"
-  default     = "Canonical:UbuntuServer:20.04-LTS:latest"
+  default     = "Canonical:ubuntu-24_04-lts:server:latest"
 }
 
 variable "runner_token" {
